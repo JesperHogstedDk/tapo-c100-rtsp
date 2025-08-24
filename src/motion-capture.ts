@@ -25,7 +25,10 @@ const RTSP_HIGH = `rtsp://${USERNAME}:${PASSWORD}@${CAMERA_IP}:554/stream1`;
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 // Juster denne for at styre JPEG-komprimering (1 = bedst, 31 = dårligst)
-const outputQuality = 2;
+// Læs kvalitet fra CLI-argumenter, fallback til 2
+const argQuality = process.argv.find(a => a.startsWith('--quality='));
+const outputQuality = argQuality ? parseInt(argQuality.split('=')[1], 10) : 2;
+
 // Anbefalinger: 1 = næsten tabsfri, 2 = høj kvalitet, 3-5 = god balance, >5 = lavere kvalitet
 
 let jimpPromise: Promise<any> | null = null;
@@ -40,7 +43,7 @@ function ensureDir(dirPath: string) {
   }
 }
 
-// Henter ét frame fra en RTSP-stream som buffer
+// Henter ét frame fra en RTSP-stream som buffer (bruges til motion detection)
 async function grabFrame(rtspUrl: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -89,7 +92,25 @@ async function hasMotion(prev: Buffer, curr: Buffer, threshold = 0.02): Promise<
   return changeRatio > threshold; // 0.02 = 2% af pixels ændret
 }
 
-// Tager et snapshot fra RTSP_HIGH og gemmer det som JPEG
+// Variabel til at holde stien til det nyeste billede fra stream1
+const latestImagePath = path.join(__dirname, 'latest.jpg');
+
+// Starter en baggrunds-ffmpeg-proces, der hele tiden opdaterer latest.jpg
+function startHighStreamCapture() {
+  console.log('Starter højopløsnings-stream capture i baggrunden...');
+  ffmpeg(RTSP_HIGH)
+    .inputOptions(['-rtsp_transport', 'tcp', '-stimeout', '5000000'])
+    .outputOptions('-q:v', `${outputQuality}`)
+    .outputOptions('-update', '1') // overskriv samme fil
+    .output(latestImagePath)
+    .on('error', err => {
+      console.error('Fejl i højopløsnings-stream:', err);
+      setTimeout(startHighStreamCapture, 2000); // prøv igen efter fejl
+    })
+    .run();
+}
+
+// Tager et snapshot ved at kopiere latest.jpg til dato-mappe med tidsstempel
 async function takeSnapshot() {
   const now = new Date();
   const dateFolder = now.toISOString().split('T')[0]; // YYYY-MM-DD
@@ -100,21 +121,12 @@ async function takeSnapshot() {
 
   const filename = path.join(folderPath, `${timeStamp}.jpg`);
 
-  return new Promise<void>((resolve, reject) => {
-    ffmpeg(RTSP_HIGH)
-      .inputOptions(['-rtsp_transport', 'tcp', '-stimeout', '5000000'])
-      .seekInput(1) // vent 1 sekund for at sikre I-frame
-      .frames(1)
-      .outputOptions(`-q:v`, `${outputQuality}`)
-      .videoFilters('scale=iw:ih')
-      .output(filename)
-      .on('end', () => {
-        console.log(`📸 Snapshot gemt (JPEG kvalitet ${outputQuality}): ${filename}`);
-        resolve();
-      })
-      .on('error', reject)
-      .run();
-  });
+  try {
+    fs.copyFileSync(latestImagePath, filename);
+    console.log(`📸 Snapshot gemt (fra buffer, JPEG kvalitet ${outputQuality}): ${filename}`);
+  } catch (err) {
+    console.error('Kunne ikke kopiere snapshot:', err);
+  }
 }
 
 // Overvåger bevægelse og tager snapshots ved ændring
@@ -126,7 +138,7 @@ async function monitor() {
     try {
       const currFrame = await grabFrame(RTSP_LOW);
       if (await hasMotion(prevFrame, currFrame)) {
-        console.log('🚨 Bevægelse registreret! Tager snapshot fra stream1...');
+        console.log('🚨 Bevægelse registreret! Gemmer snapshot fra buffer...');
         await takeSnapshot();
         await delay(3000); // undgå spam
       }
@@ -138,4 +150,6 @@ async function monitor() {
   }
 }
 
+// Start baggrunds-capture og motion detection
+startHighStreamCapture();
 monitor();
