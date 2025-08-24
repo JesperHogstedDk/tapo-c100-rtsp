@@ -1,0 +1,21 @@
+{
+  "name": "tapo-rtsp-motion",
+  "version": "1.0.0",
+  "description": "Tapo C100 RTSP snapshot med TypeScript (ESM)",
+  "type": "module",
+  "scripts": {
+    "start": "ts-node-esm src/motion-capture.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/fluent-ffmpeg": "^2.1.27",
+    "@types/node": "^20.11.30",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}
