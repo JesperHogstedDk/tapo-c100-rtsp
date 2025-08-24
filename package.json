@@ -4,7 +4,7 @@
   "description": "Tapo C100 RTSP snapshot med TypeScript (ESM)",
   "type": "module",
   "scripts": {
-    "start": "ts-node-esm src/motion-capture.ts",
+    "start": "ts-node-esm src/motion-capture.ts -- --quality=1 ",
     "build": "tsc"
   },
   "dependencies": {

@@ -1,3 +1,4 @@
+import fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,26 +19,33 @@ const RTSP_LOW = `rtsp://${USERNAME}:${PASSWORD}@${CAMERA_IP}:554/stream2`;
 // Høj opløsning til snapshots
 const RTSP_HIGH = `rtsp://${USERNAME}:${PASSWORD}@${CAMERA_IP}:554/stream1`;
 
-console.log('RTSP_LOW:', RTSP_LOW);
-console.log('RTSP_HIGH:', RTSP_HIGH);
+// console.log('RTSP_LOW:', RTSP_LOW);
+// console.log('RTSP_HIGH:', RTSP_HIGH);
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-// Cache dynamisk import af Jimp
+// Juster denne for at styre JPEG-komprimering (1 = bedst, 31 = dårligst)
+const outputQuality = 2;
+// Anbefalinger: 1 = næsten tabsfri, 2 = høj kvalitet, 3-5 = god balance, >5 = lavere kvalitet
+
 let jimpPromise: Promise<any> | null = null;
 async function getJimp() {
   if (!jimpPromise) jimpPromise = import('jimp');
   return jimpPromise;
 }
 
+function ensureDir(dirPath: string) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+// Henter ét frame fra en RTSP-stream som buffer
 async function grabFrame(rtspUrl: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     ffmpeg(rtspUrl)
-      .inputOptions([
-        '-rtsp_transport', 'tcp',
-        '-stimeout', '5000000' // 5 sek (mikrosekunder)
-      ])
+      .inputOptions(['-rtsp_transport', 'tcp', '-stimeout', '5000000'])
       .frames(1)
       .format('image2')
       .outputOptions('-q:v 2') // kvalitet
@@ -48,6 +56,7 @@ async function grabFrame(rtspUrl: string): Promise<Buffer> {
   });
 }
 
+// Sammenligner to billeder og returnerer true hvis ændringen overstiger threshold
 async function hasMotion(prev: Buffer, curr: Buffer, threshold = 0.02): Promise<boolean> {
   const jimp = await getJimp();
   const Jimp = jimp.Jimp; // v1.x eksporterer { Jimp }
@@ -80,18 +89,27 @@ async function hasMotion(prev: Buffer, curr: Buffer, threshold = 0.02): Promise<
   return changeRatio > threshold; // 0.02 = 2% af pixels ændret
 }
 
+// Tager et snapshot fra RTSP_HIGH og gemmer det som JPEG
 async function takeSnapshot() {
-  const filename = path.join(__dirname, `snapshot_${Date.now()}.jpg`);
+  const now = new Date();
+  const dateFolder = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  const timeStamp = now.toTimeString().split(' ')[0].replace(/:/g, '-'); // HH-MM-SS
+
+  const folderPath = path.join(__dirname, dateFolder);
+  ensureDir(folderPath);
+
+  const filename = path.join(folderPath, `${timeStamp}.jpg`);
+
   return new Promise<void>((resolve, reject) => {
     ffmpeg(RTSP_HIGH)
-      .inputOptions([
-        '-rtsp_transport', 'tcp',
-        '-stimeout', '5000000'
-      ])
+      .inputOptions(['-rtsp_transport', 'tcp', '-stimeout', '5000000'])
+      .seekInput(1) // vent 1 sekund for at sikre I-frame
       .frames(1)
+      .outputOptions(`-q:v`, `${outputQuality}`)
+      .videoFilters('scale=iw:ih')
       .output(filename)
       .on('end', () => {
-        console.log(`📸 Snapshot gemt: ${filename}`);
+        console.log(`📸 Snapshot gemt (JPEG kvalitet ${outputQuality}): ${filename}`);
         resolve();
       })
       .on('error', reject)
@@ -99,6 +117,7 @@ async function takeSnapshot() {
   });
 }
 
+// Overvåger bevægelse og tager snapshots ved ændring
 async function monitor() {
   console.log('Starter lokal motion detection...');
   let prevFrame = await grabFrame(RTSP_LOW);
@@ -107,7 +126,7 @@ async function monitor() {
     try {
       const currFrame = await grabFrame(RTSP_LOW);
       if (await hasMotion(prevFrame, currFrame)) {
-        console.log('🚨 Bevægelse registreret! Tager snapshot...');
+        console.log('🚨 Bevægelse registreret! Tager snapshot fra stream1...');
         await takeSnapshot();
         await delay(3000); // undgå spam
       }
