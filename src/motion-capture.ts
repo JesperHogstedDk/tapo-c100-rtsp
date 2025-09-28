@@ -3,6 +3,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+// import checkAccess from './checkAccess';
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -10,7 +11,9 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CAMERA_IP = '192.168.0.7';
+// const CAMERA_IP = '192.168.0.7';
+// const CAMERA_IP = '192.168.8.213';
+const CAMERA_IP = '85.83.245.186';
 const USERNAME = 'Mlkv3TapoC100';
 const PASSWORD = 'C100Opat';
 
@@ -30,6 +33,8 @@ const argQuality = process.argv.find(a => a.startsWith('--quality='));
 const outputQuality = argQuality ? parseInt(argQuality.split('=')[1], 10) : 2;
 
 // Anbefalinger: 1 = næsten tabsfri, 2 = høj kvalitet, 3-5 = god balance, >5 = lavere kvalitet
+// const outputQuality = '2';
+
 
 let jimpPromise: Promise<any> | null = null;
 async function getJimp() {
@@ -101,6 +106,7 @@ function startHighStreamCapture() {
   ffmpeg(RTSP_HIGH)
     .inputOptions(['-rtsp_transport', 'tcp', '-stimeout', '5000000'])
     .outputOptions('-q:v', `${outputQuality}`)
+    // .outputOptions('-q:v', `2`)
     .outputOptions('-update', '1') // overskriv samme fil
     .output(latestImagePath)
     .on('error', err => {
@@ -127,6 +133,8 @@ async function takeSnapshot() {
   } catch (err) {
     console.error('Kunne ikke kopiere snapshot:', err);
   }
+
+  // await checkAccess
 }
 
 // Overvåger bevægelse og tager snapshots ved ændring
