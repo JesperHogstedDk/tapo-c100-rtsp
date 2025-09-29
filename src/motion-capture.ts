@@ -206,22 +206,23 @@ app.get("/latest", (req, res) => {
 
 // 📂 Liste over alle fotos
 app.get("/photos", (req, res) => {
-  const files: string[] = [];
+  const files: { path: string; mtime: number }[] = [];
 
-  // Gennemgå snapshot-mapper
   fs.readdirSync(SNAPSHOT_DIR, { withFileTypes: true }).forEach((entry) => {
     if (entry.isDirectory()) {
       const folderPath = path.join(SNAPSHOT_DIR, entry.name);
       fs.readdirSync(folderPath).forEach((file) => {
         if (file.endsWith(".jpg")) {
-          files.push(`${entry.name}/${file}`);
+          const filePath = path.join(folderPath, file);
+          const stats = fs.statSync(filePath);
+          files.push({ path: `${entry.name}/${file}`, mtime: stats.mtimeMs });
         }
       });
     }
   });
 
-  // Sortér nyeste først (både mapper og filer)
-  files.sort((a, b) => b.localeCompare(a));
+  // Sortér nyeste først
+  files.sort((a, b) => b.mtime - a.mtime);
 
   const html = `
     <html>
@@ -241,8 +242,8 @@ app.get("/photos", (req, res) => {
           ${files
             .map(
               (f) =>
-                `<a href="/${f}?t=${Date.now()}" target="_blank">
-                   <img src="/${f}?t=${Date.now()}" alt="${f}">
+                `<a href="/${f.path}?t=${f.mtime}" target="_blank">
+                   <img src="/${f.path}?t=${f.mtime}" alt="${f.path}">
                  </a>`
             )
             .join("\n")}
