@@ -1,7 +1,7 @@
 // src/motion-capture.ts
-import fs from "fs";
+import fs from "node:fs";
 import ffmpeg from "fluent-ffmpeg";
-import path from "path";
+import path from "node:path";
 import { fileURLToPath } from "url";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import express from "express";
@@ -17,15 +17,15 @@ const __dirname = path.dirname(__filename);
 
 // 📌 Miljøvariable
 const CAMERA_IP = process.env.CAMERA_IP ;
-const USERNAME = process.env.USRNAME ;
+const USRNAME = process.env.USRNAME ;
 const PASSWORD = process.env.PASSWORD ;
 
 // Snapshot‑mappe
 const SNAPSHOT_DIR = path.join(__dirname, "snapshots");
 if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
 
-const RTSP_LOW = `rtsp://${USERNAME}:${PASSWORD}@${CAMERA_IP}:554/stream2`;
-const RTSP_HIGH = `rtsp://${USERNAME}:${PASSWORD}@${CAMERA_IP}:554/stream1`;
+const RTSP_LOW = `rtsp://${USRNAME}:${PASSWORD}@${CAMERA_IP}:554/stream2`;
+const RTSP_HIGH = `rtsp://${USRNAME}:${PASSWORD}@${CAMERA_IP}:554/stream1`;
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
