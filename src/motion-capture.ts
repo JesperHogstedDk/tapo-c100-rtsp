@@ -50,6 +50,19 @@ async function grabFrame(rtspUrl: string): Promise<Buffer> {
   });
 }
 
+// Robust variant med retry
+async function grabFrameSafe(rtspUrl: string, retries = 3): Promise<Buffer> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await grabFrame(rtspUrl);
+    } catch (err) {
+      console.error(`grabFrame fejl (forsøg ${i + 1}/${retries}):`, err);
+      await delay(1000);
+    }
+  }
+  throw new Error("grabFrame fejlede efter flere forsøg");
+}
+
 // Enkel motion detection: sammenlign buffer-størrelse
 async function hasMotion(prev: Buffer, curr: Buffer, thresholdBytes = 5000): Promise<boolean> {
   return Math.abs(prev.length - curr.length) > thresholdBytes;
@@ -63,7 +76,7 @@ async function takeHighSnapshot() {
   const filename = path.join(folder, `${now.toTimeString().split(" ")[0].replace(/:/g, "-")}.jpg`);
 
   try {
-    const buf = await grabFrame(RTSP_HIGH);
+    const buf = await grabFrameSafe(RTSP_HIGH);
     fs.writeFileSync(filename, buf);
     console.log("📸 Højopløsnings-snapshot gemt:", filename);
   } catch (err) {
@@ -97,30 +110,36 @@ function getLatestSnapshot(): string | null {
 // Overvåg bevægelse og tag high-res når roen har varet CALM_PERIOD sekunder
 async function monitor() {
   console.log("Starter motion detection...");
-  let prev = await grabFrame(RTSP_LOW);
-  let motionDetected = false;
-  let lastMotionTime = Date.now();
+  try {
+    let prev = await grabFrameSafe(RTSP_LOW);
+    let motionDetected = false;
+    let lastMotionTime = Date.now();
 
-  while (true) {
-    try {
-      const curr = await grabFrame(RTSP_LOW);
-      if (await hasMotion(prev, curr)) {
-        motionDetected = true;
-        lastMotionTime = Date.now();
-        console.log("🔎 Bevægelse registreret...");
-      }
-      prev = curr;
+    while (true) {
+      try {
+        const curr = await grabFrameSafe(RTSP_LOW);
+        if (await hasMotion(prev, curr)) {
+          motionDetected = true;
+          lastMotionTime = Date.now();
+          console.log("🔎 Bevægelse registreret...");
+        }
+        prev = curr;
 
-      // Hvis der har været ro i CALM_PERIOD sekunder
-      if (motionDetected && Date.now() - lastMotionTime > CALM_PERIOD * 1000) {
-        console.log("✅ Ro registreret – tager high snapshot");
-        await takeHighSnapshot();
-        motionDetected = false;
+        // Hvis der har været ro i CALM_PERIOD sekunder
+        if (motionDetected && Date.now() - lastMotionTime > CALM_PERIOD * 1000) {
+          console.log("✅ Ro registreret – tager high snapshot");
+          await takeHighSnapshot();
+          motionDetected = false;
+        }
+      } catch (err) {
+        console.error("Fejl i monitor-loop:", err);
+        await delay(2000);
       }
-    } catch (err) {
-      console.error("Fejl i monitor:", err);
+      await delay(1000);
     }
-    await delay(1000);
+  } catch (err) {
+    console.error("Monitor crashede:", err);
+    setTimeout(monitor, 5000); // genstart hele monitor efter 5 sek
   }
 }
 
