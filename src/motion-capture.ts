@@ -198,6 +198,9 @@ app.get("/", (req, res) => {
 });
 
 app.get("/latest", (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   res.sendFile(latestImagePath);
 });
 
@@ -220,12 +223,26 @@ app.get("/photos", (req, res) => {
 
   const html = `
     <html>
-      <head><title>📸 Snapshot liste</title></head>
+      <head>
+        <title>📸 Snapshot galleri</title>
+        <style>
+          body { font-family: sans-serif; }
+          .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+          .grid img { max-width: 200px; border: 1px solid #ccc; }
+        </style>
+      </head>
       <body>
-        <h1>📸 Snapshot liste</h1>
-        <ul>
-          ${files.map((f) => `<li><a href="/${f}" target="_blank">${f}</a></li>`).join("\n")}
-        </ul>
+        <h1>📸 Snapshot galleri</h1>
+        <div class="grid">
+          ${files
+            .map(
+              (f) =>
+                `<a href="/${f}?t=${Date.now()}" target="_blank">
+                   <img src="/${f}?t=${Date.now()}" alt="${f}">
+                 </a>`
+            )
+            .join("\n")}
+        </div>
       </body>
     </html>
   `;
