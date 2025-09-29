@@ -17,9 +17,10 @@ const __dirname = path.dirname(__filename);
 const CAMERA_IP = process.env.CAMERA_IP;
 const USRNAME = process.env.USRNAME;
 const PASSWORD = process.env.PASSWORD;
+const CALM_PERIOD = Number(process.env.CALM_PERIOD) || 10; // default 10 sekunder
 
-if (!CAMERA_IP || !USRNAME || !PASSWORD) {
-  console.error("❌ Mangler miljøvariable: CAMERA_IP / USRNAME / PASSWORD");
+if (!CAMERA_IP || !USRNAME || !PASSWORD || !CALM_PERIOD) {
+  console.error("❌ Mangler miljøvariable: CAMERA_IP / USRNAME / PASSWORD / CALM_PERIOD");
   process.exit(1);
 }
 
@@ -38,8 +39,8 @@ async function grabFrame(rtspUrl: string): Promise<Buffer> {
     ffmpeg(rtspUrl)
       .inputOptions(["-rtsp_transport", "tcp", "-stimeout", "5000000"])
       .frames(1)
-      .format("image2")
       .outputOptions("-q:v 2")
+      .format("image2pipe") // vigtigt!
       .on("error", reject)
       .on("end", () => resolve(Buffer.concat(chunks)))
       .pipe()
@@ -91,19 +92,29 @@ function getLatestSnapshot(): string | null {
   return latestFile;
 }
 
-// Overvåg bevægelse
+// Overvåg bevægelse og tag high-res når roen har varet X sekunder
 async function monitor() {
   console.log("Starter motion detection...");
   let prev = await grabFrame(RTSP_LOW);
+  let motionDetected = false;
+  let lastMotionTime = Date.now();
+
   while (true) {
     try {
       const curr = await grabFrame(RTSP_LOW);
       if (await hasMotion(prev, curr)) {
-        console.log("🚨 Bevægelse registreret – gemmer high snapshot");
-        await takeHighSnapshot();
-        await delay(3000);
+        motionDetected = true;
+        lastMotionTime = Date.now();
+        console.log("🔎 Bevægelse registreret...");
       }
       prev = curr;
+
+      // Hvis der har været ro i CALM_PERIOD sekunder
+      if (motionDetected && Date.now() - lastMotionTime > CALM_PERIOD * 1000) {
+        console.log("✅ Ro registreret – tager high snapshot");
+        await takeHighSnapshot();
+        motionDetected = false;
+      }
     } catch (err) {
       console.error("Fejl i monitor:", err);
     }
@@ -137,7 +148,7 @@ app.get("/latest", (_req, res) => {
   res.end(buf);
 });
 
-// /photos viser galleri
+// /photos viser galleri med latest øverst
 app.get("/photos", (_req, res) => {
   const files: { path: string; mtime: number }[] = [];
   fs.readdirSync(SNAPSHOT_DIR, { withFileTypes: true }).forEach((entry) => {
@@ -157,8 +168,12 @@ app.get("/photos", (_req, res) => {
     <html>
       <head><title>📸 Galleri</title></head>
       <body>
-        <h1>📸 Galleri (nyeste først)</h1>
-        <p><a href="/latest?t=${Date.now()}" target="_blank">Åbn seneste billede</a></p>
+        <h1>📸 Galleri</h1>
+        <h2>Seneste snapshot</h2>
+        <div>
+          <img src="/latest?t=${Date.now()}" style="max-width:600px;border:2px solid #333;">
+        </div>
+        <h2>Alle billeder</h2>
         <div style="display:flex;flex-wrap:wrap;gap:10px;">
           ${files.map(f => `<a href="${f.path}?t=${f.mtime}" target="_blank">
             <img src="${f.path}?t=${f.mtime}" style="max-width:200px;border:1px solid #ccc;">
