@@ -16,9 +16,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 📌 Miljøvariable
-const CAMERA_IP = process.env.CAMERA_IP ;
-const USRNAME = process.env.USRNAME ;
-const PASSWORD = process.env.PASSWORD ;
+const CAMERA_IP = process.env.CAMERA_IP;
+const USRNAME = process.env.USRNAME; // bemærk: USRNAME (ikke USERNAME)
+const PASSWORD = process.env.PASSWORD;
 
 // Snapshot‑mappe
 const SNAPSHOT_DIR = path.join(__dirname, "snapshots");
@@ -191,20 +191,26 @@ monitor();
 const app = express();
 const PORT = Number(process.env.PORT) || 10000;
 
+// Slå ETag fra, så responses ikke caches baseret på etag
+app.set("etag", false);
+
 app.use(express.static(SNAPSHOT_DIR));
 
 app.get("/", (req, res) => {
   res.send("📸 Motion detection service kører – snapshots ligger i /snapshots.");
 });
 
+// Hurtigt cache-fix: Last-Modified og no-store på /latest
 app.get("/latest", (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
+  res.setHeader("Last-Modified", new Date().toUTCString()); // tving frisk indhold
+
   res.sendFile(latestImagePath);
 });
 
-// 📂 Liste over alle fotos
+// 📂 Liste over alle fotos (nyeste først med mtime-stempel)
 app.get("/photos", (req, res) => {
   const files: { path: string; mtime: number }[] = [];
 
@@ -238,6 +244,7 @@ app.get("/photos", (req, res) => {
       </head>
       <body>
         <h1>📸 Snapshot galleri (nyeste først)</h1>
+        <p><strong>Seneste live:</strong> <a href="/latest?t=${Date.now()}" target="_blank">Åbn latest</a></p>
         <div class="grid">
           ${files
             .map(
@@ -260,7 +267,6 @@ app.get("/cleanup", (req, res) => {
   res.send("🧹 Cleanup kørt!");
 });
 
-app.listen
 app.listen(PORT, () => {
   console.log(`🌐 Webserver kører på port ${PORT}`);
 });
