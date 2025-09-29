@@ -208,6 +208,7 @@ app.get("/latest", (req, res) => {
 app.get("/photos", (req, res) => {
   const files: string[] = [];
 
+  // Gennemgå snapshot-mapper
   fs.readdirSync(SNAPSHOT_DIR, { withFileTypes: true }).forEach((entry) => {
     if (entry.isDirectory()) {
       const folderPath = path.join(SNAPSHOT_DIR, entry.name);
@@ -219,20 +220,23 @@ app.get("/photos", (req, res) => {
     }
   });
 
-  files.sort().reverse();
+  // Sortér nyeste først (både mapper og filer)
+  files.sort((a, b) => b.localeCompare(a));
 
   const html = `
     <html>
       <head>
         <title>📸 Snapshot galleri</title>
         <style>
-          body { font-family: sans-serif; }
+          body { font-family: sans-serif; margin: 20px; }
+          h1 { margin-bottom: 20px; }
           .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+          .grid a { text-decoration: none; }
           .grid img { max-width: 200px; border: 1px solid #ccc; }
         </style>
       </head>
       <body>
-        <h1>📸 Snapshot galleri</h1>
+        <h1>📸 Snapshot galleri (nyeste først)</h1>
         <div class="grid">
           ${files
             .map(
