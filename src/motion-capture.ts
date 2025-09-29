@@ -1,4 +1,5 @@
 // src/motion-capture.ts
+
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "url";
@@ -17,7 +18,7 @@ const __dirname = path.dirname(__filename);
 const CAMERA_IP = process.env.CAMERA_IP;
 const USRNAME = process.env.USRNAME;
 const PASSWORD = process.env.PASSWORD;
-const CALM_PERIOD = Number(process.env.CALM_PERIOD) || 10; // default 10 sekunder
+const CALM_PERIOD = Number(process.env.CALM_PERIOD) || 10; // sekunder
 
 if (!CAMERA_IP || !USRNAME || !PASSWORD || !CALM_PERIOD) {
   console.error("❌ Mangler miljøvariable: CAMERA_IP / USRNAME / PASSWORD / CALM_PERIOD");
@@ -32,23 +33,24 @@ const RTSP_HIGH = `rtsp://${USRNAME}:${PASSWORD}@${CAMERA_IP}:554/stream1`;
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-// Hent ét frame fra en RTSP-stream som buffer
+// Hent ét frame fra en RTSP-stream som buffer (hukommelse)
 async function grabFrame(rtspUrl: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    ffmpeg(rtspUrl)
+    const proc = ffmpeg(rtspUrl)
       .inputOptions(["-rtsp_transport", "tcp", "-stimeout", "5000000"])
       .frames(1)
       .outputOptions("-q:v 2")
-      .format("image2pipe") // vigtigt!
-      .on("error", reject)
+      .format("image2pipe")
+      .on("error", (err) => reject(err))
       .on("end", () => resolve(Buffer.concat(chunks)))
-      .pipe()
-      .on("data", (chunk) => chunks.push(chunk));
+      .pipe();
+
+    proc.on("data", (chunk) => chunks.push(chunk));
   });
 }
 
-// Enkel motion detection: sammenlign filstørrelse
+// Enkel motion detection: sammenlign buffer-størrelse
 async function hasMotion(prev: Buffer, curr: Buffer, thresholdBytes = 5000): Promise<boolean> {
   return Math.abs(prev.length - curr.length) > thresholdBytes;
 }
@@ -92,7 +94,7 @@ function getLatestSnapshot(): string | null {
   return latestFile;
 }
 
-// Overvåg bevægelse og tag high-res når roen har varet X sekunder
+// Overvåg bevægelse og tag high-res når roen har varet CALM_PERIOD sekunder
 async function monitor() {
   console.log("Starter motion detection...");
   let prev = await grabFrame(RTSP_LOW);
