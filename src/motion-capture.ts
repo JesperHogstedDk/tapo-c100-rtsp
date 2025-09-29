@@ -31,24 +31,44 @@ const RTSP_HIGH = `rtsp://${USRNAME}:${PASSWORD}@${CAMERA_IP}:554/stream1`;
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-// 🎥 Start ffmpeg der gemmer snapshots med timestamp
-function startHighStreamCapture() {
-  console.log("Starter højopløsnings-stream capture...");
-  const folder = path.join(SNAPSHOT_DIR, new Date().toISOString().split("T")[0]);
-  if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
-
-  ffmpeg(RTSP_HIGH)
-    .inputOptions(["-rtsp_transport", "tcp", "-stimeout", "5000000"])
-    .outputOptions("-q:v", "2")
-    .on("error", (err) => {
-      console.error("Fejl i HIGH ffmpeg:", err);
-      setTimeout(startHighStreamCapture, 2000);
-    })
-    .on("end", () => console.log("ffmpeg stoppede – genstarter"))
-    .save(path.join(folder, `stream-${Date.now()}.jpg`));
+// Hent ét frame fra en RTSP-stream som buffer
+async function grabFrame(rtspUrl: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    ffmpeg(rtspUrl)
+      .inputOptions(["-rtsp_transport", "tcp", "-stimeout", "5000000"])
+      .frames(1)
+      .format("image2")
+      .outputOptions("-q:v 2")
+      .on("error", reject)
+      .on("end", () => resolve(Buffer.concat(chunks)))
+      .pipe()
+      .on("data", (chunk) => chunks.push(chunk));
+  });
 }
 
-// 🔎 Find nyeste snapshot i hele mappen
+// Enkel motion detection: sammenlign filstørrelse
+async function hasMotion(prev: Buffer, curr: Buffer, thresholdBytes = 5000): Promise<boolean> {
+  return Math.abs(prev.length - curr.length) > thresholdBytes;
+}
+
+// Gem snapshot i høj opløsning
+async function takeHighSnapshot() {
+  const now = new Date();
+  const folder = path.join(SNAPSHOT_DIR, now.toISOString().split("T")[0]);
+  if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+  const filename = path.join(folder, `${now.toTimeString().split(" ")[0].replace(/:/g, "-")}.jpg`);
+
+  try {
+    const buf = await grabFrame(RTSP_HIGH);
+    fs.writeFileSync(filename, buf);
+    console.log("📸 Højopløsnings-snapshot gemt:", filename);
+  } catch (err) {
+    console.error("Kunne ikke hente high snapshot:", err);
+  }
+}
+
+// Find nyeste snapshot
 function getLatestSnapshot(): string | null {
   let latestFile: string | null = null;
   let latestMtime = 0;
@@ -71,25 +91,27 @@ function getLatestSnapshot(): string | null {
   return latestFile;
 }
 
-// 🧹 Slet gamle billeder
-function cleanupOldSnapshots(maxAgeDays = 7) {
-  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
-  fs.readdirSync(SNAPSHOT_DIR, { withFileTypes: true }).forEach((entry) => {
-    const fullPath = path.join(SNAPSHOT_DIR, entry.name);
-    if (entry.isDirectory()) {
-      fs.readdirSync(fullPath).forEach((file) => {
-        const filePath = path.join(fullPath, file);
-        if (fs.statSync(filePath).mtimeMs < cutoff) {
-          fs.unlinkSync(filePath);
-          console.log("🗑️ Slettede gammelt snapshot:", filePath);
-        }
-      });
-      if (fs.readdirSync(fullPath).length === 0) fs.rmdirSync(fullPath);
+// Overvåg bevægelse
+async function monitor() {
+  console.log("Starter motion detection...");
+  let prev = await grabFrame(RTSP_LOW);
+  while (true) {
+    try {
+      const curr = await grabFrame(RTSP_LOW);
+      if (await hasMotion(prev, curr)) {
+        console.log("🚨 Bevægelse registreret – gemmer high snapshot");
+        await takeHighSnapshot();
+        await delay(3000);
+      }
+      prev = curr;
+    } catch (err) {
+      console.error("Fejl i monitor:", err);
     }
-  });
+    await delay(1000);
+  }
 }
 
-// 🌐 Webserver
+// Webserver
 const app = express();
 const PORT = Number(process.env.PORT) || 10000;
 
@@ -104,8 +126,8 @@ app.get("/", (_req, res) => {
   res.send("📸 Motion detection kører – se /latest og /photos");
 });
 
-// 🚀 /latest finder nyeste fil og sender den
-app.get("/latest", (req, res) => {
+// /latest finder nyeste snapshot
+app.get("/latest", (_req, res) => {
   const latest = getLatestSnapshot();
   if (!latest) return res.status(404).send("Ingen snapshots endnu");
   const buf = fs.readFileSync(latest);
@@ -115,7 +137,7 @@ app.get("/latest", (req, res) => {
   res.end(buf);
 });
 
-// 📂 /photos viser liste over alle billeder
+// /photos viser galleri
 app.get("/photos", (_req, res) => {
   const files: { path: string; mtime: number }[] = [];
   fs.readdirSync(SNAPSHOT_DIR, { withFileTypes: true }).forEach((entry) => {
@@ -147,14 +169,7 @@ app.get("/photos", (_req, res) => {
   `);
 });
 
-// 🧹 Cleanup manuelt
-app.get("/cleanup", (_req, res) => {
-  cleanupOldSnapshots(0);
-  res.send("🧹 Cleanup kørt!");
-});
-
 app.listen(PORT, () => console.log(`🌐 Webserver kører på port ${PORT}`));
 
-// Start capture og cleanup
-startHighStreamCapture();
-setInterval(() => cleanupOldSnapshots(7), 24 * 60 * 60 * 1000);
+// Start overvågning
+monitor();
