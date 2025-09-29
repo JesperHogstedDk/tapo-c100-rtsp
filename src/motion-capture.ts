@@ -5,6 +5,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import express from "express";
+import dotenv from "dotenv";
+
+dotenv.config(); // indlæs .env lokalt
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -12,13 +15,16 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const CAMERA_IP = "85.83.245.186";
-const USERNAME = "Mlkv3TapoC100";
-const PASSWORD = "C100Opat";
+// 📌 Miljøvariable
+const CAMERA_IP = process.env.CAMERA_IP ;
+const USERNAME = process.env.USRNAME ;
+const PASSWORD = process.env.PASSWORD ;
 
-// Lav opløsning til motion detection
+// Snapshot‑mappe
+const SNAPSHOT_DIR = path.join(__dirname, "snapshots");
+if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+
 const RTSP_LOW = `rtsp://${USERNAME}:${PASSWORD}@${CAMERA_IP}:554/stream2`;
-// Høj opløsning til snapshots
 const RTSP_HIGH = `rtsp://${USERNAME}:${PASSWORD}@${CAMERA_IP}:554/stream1`;
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -84,7 +90,7 @@ async function hasMotion(prev: Buffer, curr: Buffer, threshold = 0.02): Promise<
   return changeRatio > threshold;
 }
 
-const latestImagePath = path.join(__dirname, "latest.jpg");
+const latestImagePath = path.join(SNAPSHOT_DIR, "latest.jpg");
 
 // Starter en baggrunds-ffmpeg-proces, der hele tiden opdaterer latest.jpg
 function startHighStreamCapture() {
@@ -107,7 +113,7 @@ async function takeSnapshot() {
   const dateFolder = now.toISOString().split("T")[0];
   const timeStamp = now.toTimeString().split(" ")[0].replace(/:/g, "-");
 
-  const folderPath = path.join(__dirname, dateFolder);
+  const folderPath = path.join(SNAPSHOT_DIR, dateFolder);
   ensureDir(folderPath);
 
   const filename = path.join(folderPath, `${timeStamp}.jpg`);
@@ -141,27 +147,102 @@ async function monitor() {
   }
 }
 
+// 🧹 Slet gamle billeder (ældre end X dage)
+function cleanupOldSnapshots(maxAgeDays = 7) {
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+
+  fs.readdirSync(SNAPSHOT_DIR, { withFileTypes: true }).forEach((entry) => {
+    const fullPath = path.join(SNAPSHOT_DIR, entry.name);
+
+    try {
+      const stats = fs.statSync(fullPath);
+
+      if (entry.isDirectory()) {
+        fs.readdirSync(fullPath).forEach((file) => {
+          const filePath = path.join(fullPath, file);
+          const fileStats = fs.statSync(filePath);
+          if (fileStats.mtimeMs < cutoff) {
+            fs.unlinkSync(filePath);
+            console.log(`🗑️ Slettede gammelt snapshot: ${filePath}`);
+          }
+        });
+
+        if (fs.readdirSync(fullPath).length === 0) {
+          fs.rmdirSync(fullPath);
+          console.log(`🗑️ Slettede tom mappe: ${fullPath}`);
+        }
+      } else {
+        if (stats.mtimeMs < cutoff && entry.name !== "latest.jpg") {
+          fs.unlinkSync(fullPath);
+          console.log(`🗑️ Slettede gammel fil: ${fullPath}`);
+        }
+      }
+    } catch (err) {
+      console.error("Fejl under cleanup:", err);
+    }
+  });
+}
+
 // 🚀 Start motion detection
 startHighStreamCapture();
 monitor();
 
 // 🌐 Webserver til snapshots
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT = Number(process.env.PORT) || 10000;
 
-// Gør snapshots tilgængelige som statiske filer
-app.use(express.static(__dirname));
+app.use(express.static(SNAPSHOT_DIR));
 
-// Healthcheck
 app.get("/", (req, res) => {
-  res.send("📸 Motion detection service kører – snapshots ligger i undermapperne.");
+  res.send("📸 Motion detection service kører – snapshots ligger i /snapshots.");
 });
 
-// Seneste snapshot
 app.get("/latest", (req, res) => {
   res.sendFile(latestImagePath);
 });
 
+// 📂 Liste over alle fotos
+app.get("/photos", (req, res) => {
+  const files: string[] = [];
+
+  fs.readdirSync(SNAPSHOT_DIR, { withFileTypes: true }).forEach((entry) => {
+    if (entry.isDirectory()) {
+      const folderPath = path.join(SNAPSHOT_DIR, entry.name);
+      fs.readdirSync(folderPath).forEach((file) => {
+        if (file.endsWith(".jpg")) {
+          files.push(`${entry.name}/${file}`);
+        }
+      });
+    }
+  });
+
+  files.sort().reverse();
+
+  const html = `
+    <html>
+      <head><title>📸 Snapshot liste</title></head>
+      <body>
+        <h1>📸 Snapshot liste</h1>
+        <ul>
+          ${files.map((f) => `<li><a href="/${f}" target="_blank">${f}</a></li>`).join("\n")}
+        </ul>
+      </body>
+    </html>
+  `;
+  res.send(html);
+});
+
+// 🧹 Endpoint til manuel cleanup
+app.get("/cleanup", (req, res) => {
+  cleanupOldSnapshots(0);
+  res.send("🧹 Cleanup kørt!");
+});
+
+app.listen
 app.listen(PORT, () => {
   console.log(`🌐 Webserver kører på port ${PORT}`);
 });
+
+// Kør cleanup ved opstart og derefter dagligt
+cleanupOldSnapshots(7);
+setInterval(() => cleanupOldSnapshots(7), 24 * 60 * 60 * 1000);
