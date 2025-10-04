@@ -1,5 +1,7 @@
+# ./start.sh
 #!/bin/bash
 # Start TapoC100 motion capture med PM2
+# chmod +x start.sh
 
 echo "📦 Installerer PM2 lokalt (hvis nødvendigt)..."
 npm install pm2
@@ -11,7 +13,9 @@ echo "🔄 Stopper tidligere instans (hvis den findes)..."
 npx pm2 delete $APP_NAME
 
 echo "🚀 Starter $APP med PM2..."
-npx pm2 start $APP --name $APP_NAME
+npx pm2 start dist/motion-capture.js --name motion-capture \
+  --log-date-format="YYYY-MM-DD HH:mm:ss"
+# npx pm2 start $APP --name $APP_NAME
 
 echo "💾 Gemmer PM2 konfiguration..."
 npx pm2 save

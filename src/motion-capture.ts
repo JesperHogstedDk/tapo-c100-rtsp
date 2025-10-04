@@ -7,6 +7,7 @@ import express from "express";
 import dotenv from "dotenv";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import { ChildProcessWithoutNullStreams } from "child_process";
 
 dotenv.config();
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -33,30 +34,61 @@ const RTSP_HIGH = `rtsp://${USRNAME}:${PASSWORD}@${CAMERA_IP}:554/stream1`;
 
 const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
+function timestamp(): string {
+  return new Date().toISOString().replace("T", " ").split(".")[0];
+}
+
+function log(msg: string) {
+  console.log(`${timestamp()} ${msg}`);
+}
+
+function logError(msg: string, err?: any) {
+  console.error(`${timestamp()} ❌ ${msg}`, err || "");
+}
+
 // Hent ét frame fra en RTSP-stream som buffer (hukommelse)
-async function grabFrame(rtspUrl: string): Promise<Buffer> {
+function grabFrame(rtspUrl: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    const proc = ffmpeg(rtspUrl)
+
+    const command = ffmpeg(rtspUrl)
       .inputOptions(["-rtsp_transport", "tcp", "-stimeout", "5000000"])
       .frames(1)
       .outputOptions("-q:v 2")
       .format("image2pipe")
-      .on("error", (err) => reject(err))
-      .on("end", () => resolve(Buffer.concat(chunks)))
-      .pipe();
+      .on("start", (cmdLine) => {} ) // log(`▶️ Startet ffmpeg: ${cmdLine}`))
+      .on("error", (err) => {
+        logError("Fejl i ffmpeg-proces", err);
+        const proc = (command as any)._ffmpegProc;
+        if (proc) {
+          const killed = proc.kill(); // ryd op
+          log(`Kill ffmpegProcprocess: ${killed}`)
+        }
+        reject(err);
+      })
+      .on("end", () => {
+        // log("🎬 ffmpeg-proces afsluttet");
+        resolve(Buffer.concat(chunks));
+      });
 
-    proc.on("data", (chunk) => chunks.push(chunk));
+    const stream = command.pipe();
+    stream.on("data", (chunk) => chunks.push(chunk));
   });
 }
 
 // Robust variant med retry
 async function grabFrameSafe(rtspUrl: string, retries = 3): Promise<Buffer> {
-  for (let i = 0; i < retries; i++) {
+  for (let i = 1; i <= retries; i++) {
     try {
-      return await grabFrame(rtspUrl);
-    } catch (err) {
-      console.error(`grabFrame fejl (forsøg ${i + 1}/${retries}):`, err);
+      // log(`🎯 Forsøg ${i}/${retries} – starter grabFrame`);
+      const buffer = await grabFrame(rtspUrl);
+      // log("✅ Snapshot hentet");
+      return buffer;
+    } catch (err: any) {
+      logError(`grabFrame fejl (forsøg ${i}/${retries})`, err.message);
+      if (err.code === "EAGAIN") {
+        log("⚠️ Systemgrænse nået – venter før næste forsøg");
+      }
       await delay(1000);
     }
   }
@@ -208,4 +240,10 @@ app.get("/photos", (_req, res) => {
 app.listen(PORT, () => console.log(`🌐 Webserver kører på port ${PORT}`));
 
 // Start overvågning
-monitor();
+function startMonitor() {
+  monitor().catch(err => {
+    console.error("Monitor crashede:", err);
+    setTimeout(startMonitor, 5000);
+  });
+}
+startMonitor();
