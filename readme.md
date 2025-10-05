@@ -183,3 +183,11 @@ eller
 @reboot /usr/bin/env bash -c 'cd /var/www/hogsted.dk/public_html/TapoC100 && npx pm2 resurrect >> /var/www/hogsted.dk/public_html/TapoC100/cron-startup.log 2>&1'  
 afslut med  
 :qa
+
+🧪 Test om det virker
+Efter næste systemgenstart, tjek:  
+cat /var/www/hogsted.dk/public_html/TapoC100/cron-test.log  
+
+Du bør se noget som:  
+Cron kørte: Sun Oct 6 08:00:01 CEST 2025
+
