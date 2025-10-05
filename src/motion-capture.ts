@@ -22,7 +22,7 @@ const PASSWORD = process.env.PASSWORD;
 const CALM_PERIOD = Number(process.env.CALM_PERIOD) || 10; // sekunder
 
 if (!CAMERA_IP || !USRNAME || !PASSWORD || !CALM_PERIOD) {
-  console.error("❌ Mangler miljøvariable: CAMERA_IP / USRNAME / PASSWORD / CALM_PERIOD");
+  logError("❌ Mangler miljøvariable: CAMERA_IP / USRNAME / PASSWORD / CALM_PERIOD");
   process.exit(1);
 }
 
@@ -110,9 +110,9 @@ async function takeHighSnapshot() {
   try {
     const buf = await grabFrameSafe(RTSP_HIGH);
     fs.writeFileSync(filename, buf);
-    console.log("📸 Højopløsnings-snapshot gemt:", filename);
+    log(`📸 Højopløsnings-snapshot gemt: ${filename}` );
   } catch (err) {
-    console.error("Kunne ikke hente high snapshot:", err);
+    logError("Kunne ikke hente high snapsh1ot:", err);
   }
 }
 
@@ -141,7 +141,7 @@ function getLatestSnapshot(): string | null {
 
 // Overvåg bevægelse og tag high-res når roen har varet CALM_PERIOD sekunder
 async function monitor() {
-  console.log("Starter motion detection...");
+  log("Starter motion detection...");
   try {
     let prev = await grabFrameSafe(RTSP_LOW);
     let motionDetected = false;
@@ -153,24 +153,24 @@ async function monitor() {
         if (await hasMotion(prev, curr)) {
           motionDetected = true;
           lastMotionTime = Date.now();
-          console.log("🔎 Bevægelse registreret...");
+          log("🔎 Bevægelse registreret...");
         }
         prev = curr;
 
         // Hvis der har været ro i CALM_PERIOD sekunder
         if (motionDetected && Date.now() - lastMotionTime > CALM_PERIOD * 1000) {
-          console.log("✅ Ro registreret – tager high snapshot");
+          log("✅ Ro registreret – tager high snapshot");
           await takeHighSnapshot();
           motionDetected = false;
         }
       } catch (err) {
-        console.error("Fejl i monitor-loop:", err);
+        logError("Fejl i monitor-loop:", err);
         await delay(2000);
       }
       await delay(1000);
     }
   } catch (err) {
-    console.error("Monitor crashede:", err);
+    logError("Monitor crashede:", err);
     setTimeout(monitor, 5000); // genstart hele monitor efter 5 sek
   }
 }
@@ -237,12 +237,12 @@ app.get("/photos", (_req, res) => {
   `);
 });
 
-app.listen(PORT, () => console.log(`🌐 Webserver kører på port ${PORT}`));
+app.listen(PORT, () => log(`🌐 Webserver kører på port ${PORT}`));
 
 // Start overvågning
 function startMonitor() {
   monitor().catch(err => {
-    console.error("Monitor crashede:", err);
+    logError("Monitor crashede:", err);
     setTimeout(startMonitor, 5000);
   });
 }

@@ -1,10 +1,12 @@
-//  ./check-process.sh
+# ./vis-log.sh
 
 # chmod +x vis-log.sh
 
-echo Vis processer
+#!/bin/bash
+
+echo "Vis processer"
 echo "--------------------------------"
-ps aux | grep node
+ps aux | grep "[n]ode"
 
 echo "Skriv pm2 logs"
 echo "--------------------------------"

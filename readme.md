@@ -155,4 +155,31 @@ dist/                   # Transpileret JS (efter build)
 ## 📜 Licens
 
 MIT – brug frit og tilpas efter behov.
+
+## Genstart med crontab 
+Åbn crontab
+```bash
+crontab -e
 ```
+- Tryk i for at gå i insert mode (du kan nu skrive).
+- Indsæt linjen:
+```bash
+@reboot /usr/bin/env bash -c 'cd /var/www/hogsted.dk/public_html/TapoC100 && npx pm2 resurrect'  
+eller  
+@reboot /usr/bin/env bash -c 'cd /var/www/hogsted.dk/public_html/TapoC100 && npx pm2 resurrect >> /var/www/hogsted.dk/public_html/TapoC100/cron-startup.log 2>&1'
+```
+- Tryk Esc for at afslutte insert mode.
+- Skriv :wq og tryk Enter for at gemme og lukke.
+
+
+Test om crontab blev gemt  
+Kør:
+```bash
+crontab -l
+```
+Du bør se:  
+@reboot /usr/bin/env bash -c 'cd /var/www/hogsted.dk/public_html/TapoC100 && npx pm2 resurrect'  
+eller  
+@reboot /usr/bin/env bash -c 'cd /var/www/hogsted.dk/public_html/TapoC100 && npx pm2 resurrect >> /var/www/hogsted.dk/public_html/TapoC100/cron-startup.log 2>&1'  
+afslut med  
+:qa

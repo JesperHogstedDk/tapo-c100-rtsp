@@ -14,14 +14,15 @@ npx pm2 delete $APP_NAME
 
 echo "🚀 Starter $APP med PM2..."
 npx pm2 start dist/motion-capture.js --name motion-capture \
-  --log-date-format="YYYY-MM-DD HH:mm:ss"
+  --log-date-format="YYYY-MM-DD HH:mm:ss" \
+  --max-memory-restart 200M
 # npx pm2 start $APP --name $APP_NAME
 
 echo "💾 Gemmer PM2 konfiguration..."
 npx pm2 save
 
-echo "🔁 Aktiverer PM2 auto-start ved genstart..."
-npx pm2 startup | tail -n 1 | bash
+# echo "🔁 Aktiverer PM2 auto-start ved genstart..."
+# npx pm2 startup | tail -n 1 | bash
 
 echo "📋 Status:"
 npx pm2 status
