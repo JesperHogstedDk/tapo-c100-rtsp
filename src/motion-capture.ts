@@ -56,7 +56,7 @@ function grabFrame(rtspUrl: string): Promise<Buffer> {
       .frames(1)
       .outputOptions("-q:v 2")
       .format("image2pipe")
-      .on("start", (cmdLine) => {} ) // log(`▶️ Startet ffmpeg: ${cmdLine}`))
+      .on("start", (cmdLine) => { }) // log(`▶️ Startet ffmpeg: ${cmdLine}`))
       .on("error", (err) => {
         logError("Fejl i ffmpeg-proces", err);
         const proc = (command as any)._ffmpegProc;
@@ -89,7 +89,8 @@ async function grabFrameSafe(rtspUrl: string, retries = 3): Promise<Buffer> {
       if (err.code === "EAGAIN") {
         log("⚠️ Systemgrænse nået – venter før næste forsøg");
       }
-      await delay(1000);
+      log("⏳ Venter 30 sekunder før ny monitor-start...");
+      setTimeout(monitor, 30000); // i stedet for 5000
     }
   }
   throw new Error("grabFrame fejlede efter flere forsøg");
@@ -110,7 +111,7 @@ async function takeHighSnapshot() {
   try {
     const buf = await grabFrameSafe(RTSP_HIGH);
     fs.writeFileSync(filename, buf);
-    log(`📸 Højopløsnings-snapshot gemt: ${filename}` );
+    log(`📸 Højopløsnings-snapshot gemt: ${filename}`);
   } catch (err) {
     logError("Kunne ikke hente high snapsh1ot:", err);
   }

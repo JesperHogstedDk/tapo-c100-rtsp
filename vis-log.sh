@@ -4,10 +4,19 @@
 
 #!/bin/bash
 
-echo "Vis processer"
+#!/bin/bash
+APP_NAME="motion-capture"
+
+echo "🔍 Aktive Node.js-processer:"
 echo "--------------------------------"
 ps aux | grep "[n]ode"
 
-echo "Skriv pm2 logs"
+echo ""
+echo "📊 PM2-status for '$APP_NAME':"
 echo "--------------------------------"
-npx pm2 logs motion-capture
+npx pm2 list | grep "$APP_NAME"
+
+echo ""
+echo "📂 Viser logs for '$APP_NAME'..."
+echo "--------------------------------"
+npx pm2 logs $APP_NAME

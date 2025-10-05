@@ -191,3 +191,12 @@ cat /var/www/hogsted.dk/public_html/TapoC100/cron-test.log
 Du bør se noget som:  
 Cron kørte: Sun Oct 6 08:00:01 CEST 2025
 
+ Brug
+- Manuelt:
+./start-or-resurrect.sh
+- Automatisk ved genstart: Tilføj til crontab -e:
+@reboot /var/www/hogsted.dk/public_html/TapoC100/start-or-resurrect.sh
+
+
+
+
