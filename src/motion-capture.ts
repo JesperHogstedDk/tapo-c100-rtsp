@@ -7,7 +7,6 @@ import express from "express";
 import dotenv from "dotenv";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
-import { ChildProcessWithoutNullStreams } from "child_process";
 
 dotenv.config();
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -46,7 +45,7 @@ function logError(msg: string, err?: any) {
   console.error(`${timestamp()} ❌ ${msg}`, err || "");
 }
 
-// Hent ét frame fra en RTSP-stream som buffer (hukommelse)
+// Hent ét frame fra en RTSP-stream som buffer
 function grabFrame(rtspUrl: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -56,18 +55,14 @@ function grabFrame(rtspUrl: string): Promise<Buffer> {
       .frames(1)
       .outputOptions("-q:v 2")
       .format("image2pipe")
-      .on("start", (cmdLine) => { }) // log(`▶️ Startet ffmpeg: ${cmdLine}`))
+      .on("start", (cmdLine) => {
+        // log(`▶️ ffmpeg start: ${cmdLine}`);   // <-- tilføjet logging
+      })
       .on("error", (err) => {
         logError("Fejl i ffmpeg-proces", err);
-        const proc = (command as any)._ffmpegProc;
-        if (proc) {
-          const killed = proc.kill(); // ryd op
-          log(`Kill ffmpegProcprocess: ${killed}`)
-        }
         reject(err);
       })
       .on("end", () => {
-        // log("🎬 ffmpeg-proces afsluttet");
         resolve(Buffer.concat(chunks));
       });
 
@@ -80,21 +75,19 @@ function grabFrame(rtspUrl: string): Promise<Buffer> {
 async function grabFrameSafe(rtspUrl: string, retries = 3): Promise<Buffer> {
   for (let i = 1; i <= retries; i++) {
     try {
-      // log(`🎯 Forsøg ${i}/${retries} – starter grabFrame`);
       const buffer = await grabFrame(rtspUrl);
-      // log("✅ Snapshot hentet");
       return buffer;
     } catch (err: any) {
       logError(`grabFrame fejl (forsøg ${i}/${retries})`, err.message);
-      if (err.code === "EAGAIN") {
-        log("⚠️ Systemgrænse nået – venter før næste forsøg");
+      if (i < retries) {
+        log("⏳ Venter 30 sekunder før nyt forsøg...");
+        await delay(30000);   // <-- ændret fra setTimeout(monitor,…)
       }
-      log("⏳ Venter 30 sekunder før ny monitor-start...");
-      setTimeout(monitor, 30000); // i stedet for 5000
     }
   }
   throw new Error("grabFrame fejlede efter flere forsøg");
 }
+
 
 // Enkel motion detection: sammenlign buffer-størrelse
 async function hasMotion(prev: Buffer, curr: Buffer, thresholdBytes = 5000): Promise<boolean> {
@@ -238,7 +231,7 @@ app.get("/photos", (_req, res) => {
   `);
 });
 
-app.listen(PORT, () => log(`🌐 Webserver kører på port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => log(`🌐 Webserver kører på port ${PORT}`));
 
 // Start overvågning
 function startMonitor() {
